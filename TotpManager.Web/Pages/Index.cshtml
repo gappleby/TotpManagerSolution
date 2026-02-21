@@ -235,7 +235,8 @@
                             </small>
                             <div class="d-flex justify-content-center gap-2">
                                 <button type="button" class="btn btn-sm btn-outline-primary"
-                                        onclick="navigator.clipboard.writeText('@Html.Raw(account.OtpUri.Replace("'", "\\'"))')">&#128203; Copy URI</button>
+                                        data-uri="@account.OtpUri"
+                                        onclick="navigator.clipboard.writeText(this.dataset.uri)">&#128203; Copy URI</button>
                                 <a href="data:image/png;base64,@account.QrPngBase64"
                                    download="@(string.IsNullOrWhiteSpace(account.Issuer) ? account.Name : account.Issuer).png"
                                    class="btn btn-sm btn-outline-secondary">&#8659; PNG</a>
@@ -271,8 +272,12 @@
 }
 
 @section Scripts {
-<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/jssha@3.3.1/dist/sha.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"
+        integrity="sha384-9Q0jWoineiIq95JeIyBsNV90KKLfDsbkj29k/YFxf76a2JwkHDYkMuSbNGN6XJfV"
+        crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/jssha@3.3.1/dist/sha.js"
+        integrity="sha384-sAqoBD+1Pa6gyaPZHBp1wtJ8N9K96edi4BvUlCBG+Kp1JsRVL9xZltKS24QghfZX"
+        crossorigin="anonymous"></script>
 <script>
 // ── Client-side image QR decode ───────────────────────────────────────────
 // Tries: 1) native BarcodeDetector (Chrome/Edge — handles dense codes best)

@@ -8,6 +8,11 @@ namespace TotpManager.Web.Pages;
 
 public class IndexModel : PageModel
 {
+    private const long MaxUploadBytes = 20 * 1024 * 1024; // 20 MB
+
+    private readonly ILogger<IndexModel> _logger;
+    public IndexModel(ILogger<IndexModel> logger) => _logger = logger;
+
     // ── Input ──────────────────────────────────────────────────────────────
     [BindProperty] public string InputMode { get; set; } = "url";
     [BindProperty] public string? MigrationUrl { get; set; }
@@ -62,7 +67,11 @@ public class IndexModel : PageModel
             if (InputMode == "zip") await ProcessZipUploadAsync();
             else                    await ProcessMigrationUrlAsync();
         }
-        catch (Exception ex) { ErrorMessage = $"Error: {ex.Message}"; }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error processing Add request (mode={Mode})", InputMode);
+            ErrorMessage = "Could not process the request. Please check your input and try again.";
+        }
 
         // Always merge new accounts into existing
         var existing = ParseUriList(ExistingOtpUris)
@@ -81,6 +90,11 @@ public class IndexModel : PageModel
             ErrorMessage = "Please select a ZIP file.";
             return Page();
         }
+        if (RestoreZip.Length > MaxUploadBytes)
+        {
+            ErrorMessage = "File too large. Maximum size is 20 MB.";
+            return Page();
+        }
 
         try
         {
@@ -92,7 +106,11 @@ public class IndexModel : PageModel
                 ResolvedMigrationUrl = string.Join('\n', Accounts.Select(a => a.OtpUri));
             RestoredWithoutPassword = Accounts.Count > 0 && !wasEncrypted;
         }
-        catch (Exception ex) { ErrorMessage = $"Error restoring: {ex.Message}"; }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error restoring from ZIP");
+            ErrorMessage = "Could not restore from ZIP. Please check the file and password.";
+        }
 
         return Page();
     }
@@ -177,7 +195,8 @@ public class IndexModel : PageModel
         }
         catch (Exception ex)
         {
-            return BadRequest($"Error generating ZIP: {ex.Message}");
+            _logger.LogError(ex, "Error generating backup ZIP");
+            return BadRequest("Could not generate backup ZIP.");
         }
     }
 
@@ -215,6 +234,11 @@ public class IndexModel : PageModel
             ErrorMessage = "Please select a ZIP file.";
             return;
         }
+        if (ZipUpload.Length > MaxUploadBytes)
+        {
+            ErrorMessage = "File too large. Maximum size is 20 MB.";
+            return;
+        }
 
         (Accounts, _) = await LoadAccountsFromZipAsync(ZipUpload);
 
@@ -233,6 +257,11 @@ public class IndexModel : PageModel
             if (QrImage is null || QrImage.Length == 0)
             {
                 ErrorMessage = "Please select a QR image file to upload.";
+                return;
+            }
+            if (QrImage.Length > MaxUploadBytes)
+            {
+                ErrorMessage = "Image too large. Maximum size is 20 MB.";
                 return;
             }
 
@@ -335,6 +364,7 @@ public class IndexModel : PageModel
         foreach (ZipEntry entry in zipFile)
         {
             if (!entry.IsFile) continue;
+            if (!IsSafeEntryName(entry.Name)) continue;
             if (entry.IsCrypted) wasEncrypted = true;
 
             if (entry.Name.Equals("accounts.txt", StringComparison.OrdinalIgnoreCase))
@@ -499,4 +529,11 @@ public class IndexModel : PageModel
         var invalid = Path.GetInvalidFileNameChars();
         return string.Concat(name.Select(c => invalid.Contains(c) ? '_' : c)).Trim();
     }
+
+    /// <summary>Rejects ZIP entry names that attempt path traversal.</summary>
+    private static bool IsSafeEntryName(string name) =>
+        !string.IsNullOrEmpty(name) &&
+        !name.Contains("..") &&
+        !Path.IsPathRooted(name) &&
+        !name.Contains('\0');
 }
