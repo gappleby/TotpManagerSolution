@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@ViewData["Title"] - TOTP Manager</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" />
+</head>
+<body class="bg-light">
+    <nav class="navbar navbar-dark bg-dark mb-4">
+        <div class="container">
+            <span class="navbar-brand fw-semibold d-flex align-items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="26" height="26" aria-hidden="true">
+                    <circle cx="50" cy="50" r="47" fill="#0f172a" stroke="#60a5fa" stroke-width="6"/>
+                    <rect x="16" y="36" width="68" height="9" rx="4.5" fill="#60a5fa"/>
+                    <rect x="16" y="55" width="68" height="9" rx="4.5" fill="#60a5fa"/>
+                    <rect x="30" y="11" width="9" height="78" rx="4.5" fill="white"/>
+                    <rect x="61" y="11" width="9" height="78" rx="4.5" fill="white"/>
+                </svg>
+                TOTP Manager
+            </span>
+        </div>
+    </nav>
+    <div class="container pb-5">
+        @RenderBody()
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    @await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>

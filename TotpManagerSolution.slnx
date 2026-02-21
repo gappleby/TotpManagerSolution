@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="TotpManager.Core/TotpManager.Core.csproj" />
+  <Project Path="TotpManager.Tool/TotpManager.Tool.csproj" />
+  <Project Path="TotpManager.Web/TotpManager.Web.csproj" />
+</Solution>

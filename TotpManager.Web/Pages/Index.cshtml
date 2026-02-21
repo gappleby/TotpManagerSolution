@@ -1,0 +1,610 @@
+@page
+@model IndexModel
+@{
+    ViewData["Title"] = "TOTP Manager";
+    var existingUris = string.Join('\n', Model.Accounts.Select(a => a.OtpUri));
+}
+
+<!-- ── Toolbar ───────────────────────────────────────────────────────────── -->
+<div class="d-flex align-items-center gap-2 mb-3 flex-wrap">
+
+    <!-- + Add dropdown -->
+    <div class="dropdown">
+        <button class="btn btn-primary dropdown-toggle" type="button"
+                data-bs-toggle="dropdown" aria-expanded="false">
+            &#43; Add
+        </button>
+        <ul class="dropdown-menu">
+            <li>
+                <a class="dropdown-item" href="#" onclick="openAddPanel('url'); return false;">
+                    by Text
+                </a>
+            </li>
+            <li>
+                <a class="dropdown-item" href="#" onclick="openAddPanel('image'); return false;">
+                    Photo
+                </a>
+            </li>
+            <li>
+                <a class="dropdown-item" href="#" onclick="openAddPanel('camera'); return false;">
+                    Camera
+                </a>
+            </li>
+            <li>
+                <a class="dropdown-item" href="#" onclick="openAddPanel('zip'); return false;">
+                    ZIP
+                </a>
+            </li>
+        </ul>
+    </div>
+
+    <!-- Backup button -->
+    <form method="post" asp-page-handler="DownloadZip" id="backupForm">
+        <input type="hidden" name="ResolvedMigrationUrl" value="@Model.ResolvedMigrationUrl" />
+        <input type="hidden" name="BackupPassword" id="backupPasswordHidden" />
+        <button type="submit" class="btn btn-outline-secondary"
+                @(Model.Accounts.Count == 0 ? "disabled" : "")>
+            &#8659; Backup
+        </button>
+    </form>
+
+    <!-- Shared archive password — used by both Backup and Restore -->
+    <div class="input-group input-group-sm" style="width:220px">
+        <input type="password" id="sessionPassword" class="form-control form-control-sm"
+               placeholder="Archive password (optional)" />
+        <button type="button" class="btn btn-outline-secondary" id="peekBtn"
+                onclick="togglePeek()" title="Show/hide password">&#128065;</button>
+    </div>
+
+    <!-- Restore button + hidden form -->
+    <button type="button" class="btn btn-outline-warning"
+            data-account-count="@Model.Accounts.Count"
+            onclick="triggerRestore(this)">
+        &#8635; Restore
+    </button>
+    <form method="post" asp-page-handler="Restore" enctype="multipart/form-data"
+          id="restoreForm" style="display:none">
+        <input type="file" name="RestoreZip" id="restoreFileInput" accept=".zip"
+               onchange="this.closest('form').submit()" />
+        <input type="hidden" name="RestorePassword" id="restorePasswordInput" />
+    </form>
+
+    <!-- Search filter -->
+    @if (Model.Accounts.Count > 0)
+    {
+        <input type="search" id="searchInput" class="form-control form-control-sm ms-auto"
+               placeholder="&#128269; Filter accounts&hellip;" style="width:200px"
+               oninput="filterCards(this.value)" />
+    }
+
+    <!-- Account count -->
+    @if (Model.Accounts.Count > 0)
+    {
+        <span class="text-muted" id="accountCount">
+            <strong>@Model.Accounts.Count</strong> account(s)
+        </span>
+    }
+</div>
+
+<!-- ── Add panel (collapsible) ──────────────────────────────────────────── -->
+<div id="addPanel" class="card mb-4 shadow-sm"
+     style="@(Model.ShowAddPanel ? "" : "display:none")">
+    <div class="card-body">
+        <form method="post" asp-page-handler="Add" enctype="multipart/form-data" id="addForm">
+            <input type="hidden" name="InputMode" id="addInputMode" value="@Model.AddPanelMode" />
+            <input type="hidden" name="ExistingOtpUris" value="@existingUris" />
+
+            <!-- URL input -->
+            <div id="addUrlSection" class="mb-3"
+                 style="@(Model.AddPanelMode != "url" ? "display:none" : "")">
+                <label class="form-label fw-semibold">Paste migration URL or otpauth:// URI</label>
+                <textarea class="form-control font-monospace" rows="3" id="addMigrationUrlInput"
+                          name="MigrationUrl" placeholder="otpauth-migration://offline?data=&#x2026;&#10;&#x2014; or &#x2014;&#10;otpauth://totp/Issuer:account?secret=&#x2026;"
+                          >@Model.MigrationUrl</textarea>
+            </div>
+
+            <!-- Photo input -->
+            <div id="addImageSection" class="mb-3"
+                 style="@(Model.AddPanelMode != "image" ? "display:none" : "")">
+                <label class="form-label fw-semibold">Upload QR image</label>
+                <input class="form-control" type="file" id="qrImageInput" name="QrImage"
+                       accept="image/png,image/jpeg,image/bmp,image/gif"
+                       onchange="decodeImageQr(this)" />
+                <div id="imageDecodeStatus" class="small mt-1" style="display:none"></div>
+            </div>
+
+            <!-- Camera input -->
+            <div id="addCameraSection" class="mb-3" style="display:none">
+                <div class="d-flex flex-column align-items-start gap-2">
+                    <div class="position-relative">
+                        <video id="cameraVideo" autoplay playsinline muted
+                               class="border rounded bg-dark"
+                               style="width:min(100%,480px); aspect-ratio:4/3; object-fit:cover;"></video>
+                        <div id="scanOverlay"
+                             class="position-absolute top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center"
+                             style="pointer-events:none;">
+                            <div id="scanBox"
+                                 style="width:60%; aspect-ratio:1; border:3px solid rgba(13,110,253,0.85);
+                                        border-radius:8px; box-shadow:0 0 0 4000px rgba(0,0,0,0.35);"></div>
+                        </div>
+                    </div>
+                    <canvas id="cameraCanvas" style="display:none;"></canvas>
+                    <div id="scanStatus" class="small text-muted">Point camera at a migration or individual account QR code&hellip;</div>
+                    <button type="button" class="btn btn-sm btn-outline-danger" onclick="stopCamera()">
+                        Stop camera
+                    </button>
+                </div>
+            </div>
+
+            <!-- ZIP input -->
+            <div id="addZipSection" class="mb-3"
+                 style="@(Model.AddPanelMode != "zip" ? "display:none" : "")">
+                <label class="form-label fw-semibold">Upload ZIP</label>
+                <input class="form-control" type="file" name="ZipUpload" accept=".zip" />
+                <div class="form-text">
+                    Select a <code>otp-qr-codes.zip</code> previously downloaded from this page.
+                    New accounts will be merged with existing ones.
+                </div>
+            </div>
+
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-primary" id="addSubmitBtn">Add</button>
+                <button type="button" class="btn btn-outline-secondary"
+                        onclick="closeAddPanel()">Cancel</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ── Error ──────────────────────────────────────────────────────────────── -->
+@if (Model.ErrorMessage is not null)
+{
+    <div class="alert alert-danger">@Model.ErrorMessage</div>
+}
+
+<!-- ── Results grid ──────────────────────────────────────────────────────── -->
+@if (Model.Accounts.Count > 0)
+{
+    <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-3" id="accountsGrid">
+        @{ int cardIdx = 0; }
+        @foreach (var account in Model.Accounts
+            .OrderBy(a => string.IsNullOrWhiteSpace(a.Issuer) ? a.Name : a.Issuer,
+                     StringComparer.OrdinalIgnoreCase)
+            .ThenBy(a => a.Name, StringComparer.OrdinalIgnoreCase))
+        {
+            var i = cardIdx++;
+            var searchVal = (account.Issuer + " " + account.Name).ToLowerInvariant();
+            <div class="col" data-search="@searchVal">
+                <div class="card shadow-sm text-center">
+                    <div class="card-body d-flex flex-column align-items-center gap-2">
+
+                        <div class="fw-semibold mt-1">
+                            @(string.IsNullOrWhiteSpace(account.Issuer)
+                                ? account.Name
+                                : account.Issuer)
+                        </div>
+                        @if (!string.IsNullOrWhiteSpace(account.Issuer) && account.Issuer != account.Name)
+                        {
+                            <small class="text-muted">@account.Name</small>
+                        }
+
+                        @if (account.TypeLabel == "TOTP")
+                        {
+                            <!-- TOTP live display — JS reads data-otp-uri and drives the updates -->
+                            <div class="w-100 px-2 mt-1" data-otp-uri="@account.OtpUri">
+                                <div class="d-flex align-items-center justify-content-center gap-2">
+                                    <div class="font-monospace fw-bold totp-code"
+                                         style="font-size:2rem; letter-spacing:0.18em; line-height:1.1;">
+                                        ···
+                                    </div>
+                                    <button type="button" class="btn btn-sm btn-outline-success totp-copy"
+                                            onclick="copyTotp(this)" title="Copy code">
+                                        &#128203;
+                                    </button>
+                                </div>
+                                <div class="d-flex align-items-center gap-2 mt-1">
+                                    <div class="progress flex-grow-1" style="height:4px;">
+                                        <div class="progress-bar totp-bar" role="progressbar"
+                                             style="width:100%; transition:none;"></div>
+                                    </div>
+                                    <small class="text-muted totp-seconds" style="min-width:2.2em; text-align:right;">30s</small>
+                                </div>
+                            </div>
+                        }
+
+                        <!-- Action bar -->
+                        <div class="d-flex justify-content-center gap-2 mt-auto pt-2">
+                            <button type="button" class="btn btn-sm btn-outline-secondary"
+                                    onclick="togglePanel('gear-@(i)','edit-@(i)')" title="Details">&#9881;</button>
+                            <button type="button" class="btn btn-sm btn-outline-primary"
+                                    onclick="togglePanel('edit-@(i)','gear-@(i)')" title="Edit">&#9998;</button>
+                            <form method="post" asp-page-handler="Delete" style="display:inline">
+                                <input type="hidden" name="UriToDelete"     value="@account.OtpUri" />
+                                <input type="hidden" name="ExistingOtpUris" value="@existingUris"   />
+                                <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete"
+                                        onclick="return confirm('Delete this account?')">&#128465;</button>
+                            </form>
+                        </div>
+
+                        <!-- Gear panel -->
+                        <div id="gear-@(i)" style="display:none" class="border-top pt-2 text-center w-100">
+                            <img src="data:image/png;base64,@account.QrPngBase64"
+                                 class="img-fluid border rounded mb-2" style="max-width:160px;" />
+                            <small class="text-muted d-block mb-2">
+                                @account.TypeLabel &middot; @account.AlgorithmLabel &middot; @account.Digits digits
+                            </small>
+                            <div class="d-flex justify-content-center gap-2">
+                                <button type="button" class="btn btn-sm btn-outline-primary"
+                                        onclick="navigator.clipboard.writeText('@Html.Raw(account.OtpUri.Replace("'", "\\'"))')">&#128203; Copy URI</button>
+                                <a href="data:image/png;base64,@account.QrPngBase64"
+                                   download="@(string.IsNullOrWhiteSpace(account.Issuer) ? account.Name : account.Issuer).png"
+                                   class="btn btn-sm btn-outline-secondary">&#8659; PNG</a>
+                            </div>
+                        </div>
+
+                        <!-- Edit panel -->
+                        <div id="edit-@(i)" style="display:none" class="border-top pt-2 text-start w-100">
+                            <form method="post" asp-page-handler="Edit">
+                                <input type="hidden" name="OldUri"          value="@account.OtpUri" />
+                                <input type="hidden" name="ExistingOtpUris" value="@existingUris"   />
+                                <div class="mb-2">
+                                    <label class="form-label small mb-1">Service</label>
+                                    <input type="text" name="NewIssuer" value="@account.Issuer" class="form-control form-control-sm" />
+                                </div>
+                                <div class="mb-2">
+                                    <label class="form-label small mb-1">Account</label>
+                                    <input type="text" name="NewName" value="@account.Name" class="form-control form-control-sm" />
+                                </div>
+                                <div class="d-flex gap-2">
+                                    <button type="submit" class="btn btn-sm btn-primary">Save</button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary"
+                                            onclick="togglePanel('edit-@(i)','gear-@(i)')">Cancel</button>
+                                </div>
+                            </form>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@section Scripts {
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+<script>
+// ── Client-side image QR decode ───────────────────────────────────────────
+// Tries: 1) native BarcodeDetector (Chrome/Edge — handles dense codes best)
+//         2) jsQR at multiple scales
+//         3) server-side fallback (form submits as-is with InputMode=image)
+async function decodeImageQr(input) {
+    const file = input.files[0];
+    if (!file) return;
+
+    const statusEl  = document.getElementById('imageDecodeStatus');
+    const submitBtn = document.getElementById('addSubmitBtn');
+    statusEl.style.display = '';
+    statusEl.className     = 'small text-muted mt-1';
+    statusEl.textContent   = 'Decoding QR code\u2026';
+    if (submitBtn) submitBtn.disabled = true;
+
+    // Load into an <img> so both BarcodeDetector and canvas can use it
+    const objectUrl = URL.createObjectURL(file);
+    const img       = new Image();
+    const loaded    = await new Promise(res => {
+        img.onload  = () => res(true);
+        img.onerror = () => res(false);
+        img.src     = objectUrl;
+    });
+    URL.revokeObjectURL(objectUrl);
+
+    if (!loaded) {
+        statusEl.className   = 'small text-danger mt-1';
+        statusEl.textContent = 'Failed to load image.';
+        if (submitBtn) submitBtn.disabled = false;
+        return;
+    }
+
+    // Helper: draw at given scale onto an off-screen canvas and run jsQR
+    const canvas = document.createElement('canvas');
+    const ctx    = canvas.getContext('2d');
+    const tryJsQr = scale => {
+        const w = Math.max(1, Math.round(img.naturalWidth  * scale));
+        const h = Math.max(1, Math.round(img.naturalHeight * scale));
+        canvas.width = w; canvas.height = h;
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+        const id = ctx.getImageData(0, 0, w, h);
+        return jsQR(id.data, w, h, { inversionAttempts: 'attemptBoth' });
+    };
+
+    let result = null;
+
+    // 1. Native BarcodeDetector (Chromium ≥ 83, Edge — uses OS QR engine)
+    if ('BarcodeDetector' in window) {
+        try {
+            const bd   = new BarcodeDetector({ formats: ['qr_code'] });
+            const hits = await bd.detect(img);
+            if (hits.length > 0) result = hits[0].rawValue;
+        } catch { /* API not available or blocked */ }
+    }
+
+    // 2. jsQR at multiple scales
+    for (const scale of [1.0, 0.5, 0.75, 1.5, 2.0]) {
+        if (result) break;
+        const code = tryJsQr(scale);
+        if (code) result = code.data;
+    }
+
+    if (result) {
+        statusEl.className   = 'small text-success mt-1';
+        statusEl.textContent = 'QR decoded \u2014 submitting\u2026';
+        document.getElementById('addInputMode').value         = 'url';
+        document.getElementById('addMigrationUrlInput').value = result;
+        document.getElementById('addUrlSection').style.display = '';
+        document.getElementById('addForm').submit();
+    } else {
+        statusEl.className   = 'small text-warning mt-1';
+        statusEl.textContent = 'Browser decode failed \u2014 trying server\u2026';
+        // Leave InputMode=image so the server receives QrImage file
+        document.getElementById('addForm').submit();
+    }
+}
+
+// ── Camera ────────────────────────────────────────────────────────────────
+let cameraStream = null;
+let scanInterval = null;
+
+function startCamera() {
+    if (!navigator.mediaDevices?.getUserMedia) {
+        setStatus('Camera not supported in this browser.', 'danger'); return;
+    }
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } } })
+        .then(stream => {
+            cameraStream = stream;
+            document.getElementById('cameraVideo').srcObject = stream;
+            setStatus('Point the camera at a Google Authenticator migration QR code\u2026', 'muted');
+            scanInterval = setInterval(scanFrame, 250);
+        })
+        .catch(err => setStatus('Camera error: ' + err.message, 'danger'));
+}
+
+function stopCamera() {
+    clearInterval(scanInterval); scanInterval = null;
+    if (cameraStream) { cameraStream.getTracks().forEach(t => t.stop()); cameraStream = null; }
+    const vid = document.getElementById('cameraVideo');
+    if (vid) vid.srcObject = null;
+}
+
+function scanFrame() {
+    const video  = document.getElementById('cameraVideo');
+    const canvas = document.getElementById('cameraCanvas');
+    if (video.readyState !== video.HAVE_ENOUGH_DATA) return;
+    canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0);
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'dontInvert' });
+    if (code && (code.data.startsWith('otpauth-migration://') || code.data.startsWith('otpauth://'))) {
+        stopCamera();
+        setStatus('QR detected \u2014 submitting\u2026', 'success');
+        // Switch to url mode and populate the textarea, then submit
+        document.getElementById('addInputMode').value = 'url';
+        document.getElementById('addMigrationUrlInput').value = code.data;
+        document.getElementById('addUrlSection').style.display = '';
+        document.getElementById('addForm').submit();
+    }
+}
+
+function setStatus(msg, level) {
+    const el = document.getElementById('scanStatus');
+    el.textContent = msg;
+    el.className = 'small text-' + level;
+}
+
+// ── Password peek ─────────────────────────────────────────────────────────
+function togglePeek() {
+    const sf  = document.getElementById('sessionPassword');
+    const btn = document.getElementById('peekBtn');
+    const showing = sf.type === 'text';
+    sf.type      = showing ? 'password' : 'text';
+    btn.innerHTML = showing ? '&#128065;' : '&#128064;';
+}
+
+// ── Card search/filter ────────────────────────────────────────────────────
+function filterCards(query) {
+    const q = query.toLowerCase().trim();
+    let visible = 0;
+    document.querySelectorAll('#accountsGrid .col[data-search]').forEach(col => {
+        const match = !q || col.dataset.search.includes(q);
+        col.style.display = match ? '' : 'none';
+        if (match) visible++;
+    });
+    const countEl = document.getElementById('accountCount');
+    if (countEl) {
+        const total = document.querySelectorAll('#accountsGrid .col[data-search]').length;
+        countEl.innerHTML = q
+            ? `<strong>${visible}</strong> of <strong>${total}</strong> account(s)`
+            : `<strong>${total}</strong> account(s)`;
+    }
+}
+
+// ── Card panels ───────────────────────────────────────────────────────────
+function togglePanel(id, siblingId) {
+    const el      = document.getElementById(id);
+    const sibling = document.getElementById(siblingId);
+    const willOpen = el.style.display === 'none';
+    if (willOpen && sibling) sibling.style.display = 'none';
+    el.style.display = willOpen ? '' : 'none';
+}
+
+// ── Add panel ─────────────────────────────────────────────────────────────
+function openAddPanel(mode) {
+    document.getElementById('addInputMode').value = mode;
+
+    document.getElementById('addUrlSection').style.display    = (mode === 'url')    ? '' : 'none';
+    document.getElementById('addImageSection').style.display  = (mode === 'image')  ? '' : 'none';
+    document.getElementById('addCameraSection').style.display = (mode === 'camera') ? '' : 'none';
+    document.getElementById('addZipSection').style.display    = (mode === 'zip')    ? '' : 'none';
+
+    // Hide submit button in camera mode (scan auto-submits)
+    document.getElementById('addSubmitBtn').style.display = (mode === 'camera') ? 'none' : '';
+
+    const panel = document.getElementById('addPanel');
+    panel.style.display = '';
+    panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    if (mode === 'camera') startCamera(); else stopCamera();
+}
+
+function closeAddPanel() {
+    stopCamera();
+    document.getElementById('addPanel').style.display = 'none';
+}
+
+// ── Restore ───────────────────────────────────────────────────────────────
+function triggerRestore(btn) {
+    const count = parseInt(btn.dataset.accountCount || '0');
+    if (count > 0) {
+        if (!confirm(`This will replace all ${count} account(s) with the contents of the selected ZIP.\n\nContinue?`))
+            return;
+    }
+    document.getElementById('restorePasswordInput').value =
+        document.getElementById('sessionPassword')?.value || '';
+    document.getElementById('restoreFileInput').click();
+}
+
+// ── TOTP ──────────────────────────────────────────────────────────────────
+function base32Decode(s) {
+    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+    s = s.toUpperCase().replace(/[^A-Z2-7]/g, '');
+    const out = [];
+    let bits = 0, val = 0;
+    for (const c of s) {
+        val = (val << 5) | alphabet.indexOf(c);
+        bits += 5;
+        if (bits >= 8) { out.push((val >>> (bits - 8)) & 0xff); bits -= 8; }
+    }
+    return new Uint8Array(out);
+}
+
+function parseOtpUri(uri) {
+    const u = new URL(uri);
+    const p = new URLSearchParams(u.search);
+    return {
+        secret:    p.get('secret') ?? '',
+        digits:    parseInt(p.get('digits')  ?? '6',  10),
+        algorithm: (p.get('algorithm') ?? 'SHA1').toUpperCase(),
+        period:    parseInt(p.get('period')  ?? '30', 10),
+    };
+}
+
+async function generateTotp({ secret, digits, algorithm, period }) {
+    const algMap = { SHA1: 'SHA-1', SHA256: 'SHA-256', SHA512: 'SHA-512' };
+    const cryptoAlg = algMap[algorithm] ?? 'SHA-1';
+
+    const counter = Math.floor(Date.now() / 1000 / period);
+    const buf = new ArrayBuffer(8);
+    new DataView(buf).setUint32(4, counter, false); // big-endian; high word stays 0
+
+    const key = await crypto.subtle.importKey(
+        'raw', base32Decode(secret),
+        { name: 'HMAC', hash: cryptoAlg },
+        false, ['sign']
+    );
+    const hmac = new Uint8Array(await crypto.subtle.sign('HMAC', key, buf));
+
+    const offset = hmac[hmac.length - 1] & 0x0f;
+    const code = ((hmac[offset]     & 0x7f) << 24)
+               | ((hmac[offset + 1] & 0xff) << 16)
+               | ((hmac[offset + 2] & 0xff) << 8)
+               |  (hmac[offset + 3] & 0xff);
+
+    return String(code % (10 ** digits)).padStart(digits, '0');
+}
+
+function groupCode(code) {
+    // split in the middle for readability: "123 456" or "1234 5678"
+    const mid = Math.floor(code.length / 2);
+    return code.slice(0, mid) + '\u2009' + code.slice(mid); // thin space
+}
+
+async function tickAllTotp() {
+    const now = Math.floor(Date.now() / 1000);
+    for (const el of document.querySelectorAll('[data-otp-uri]')) {
+        const params = parseOtpUri(el.dataset.otpUri);
+        const remaining = params.period - (now % params.period);
+        const pct = (remaining / params.period) * 100;
+
+        // colour: green → warning at ≤10 s → danger at ≤5 s
+        const barCls = remaining <= 5  ? 'progress-bar bg-danger totp-bar'
+                     : remaining <= 10 ? 'progress-bar bg-warning totp-bar'
+                     :                   'progress-bar totp-bar';
+
+        el.querySelector('.totp-bar').className  = barCls;
+        el.querySelector('.totp-bar').style.width = pct + '%';
+        el.querySelector('.totp-seconds').textContent = remaining + 's';
+
+        try {
+            el.querySelector('.totp-code').textContent = groupCode(await generateTotp(params));
+        } catch {
+            el.querySelector('.totp-code').textContent = 'error';
+        }
+    }
+}
+
+function copyTotp(btn) {
+    // Read the raw digits from the sibling .totp-code span (strip thin-space)
+    const code = btn.closest('[data-otp-uri]')
+                    .querySelector('.totp-code')
+                    .textContent.replace(/\s/g, '');
+    navigator.clipboard.writeText(code).then(() => {
+        const original = btn.innerHTML;
+        btn.innerHTML = '&#10003;';
+        btn.disabled = true;
+        setTimeout(() => { btn.innerHTML = original; btn.disabled = false; }, 1500);
+    });
+}
+
+// Run immediately then every second
+tickAllTotp();
+setInterval(tickAllTotp, 1000);
+
+// ── localStorage backup password ──────────────────────────────────────────
+// Script is at bottom of <body> so DOM is already ready — no need for DOMContentLoaded.
+const PASS_KEY = 'totpBackupPassword';
+
+(function () {
+    const sf = document.getElementById('sessionPassword');
+    if (!sf) return;
+
+    // Pre-fill or clear based on server signal
+    if (@(Model.RestoredWithoutPassword ? "true" : "false")) {
+        localStorage.removeItem(PASS_KEY);
+        sf.value = '';
+    } else {
+        sf.value = localStorage.getItem(PASS_KEY) || '';
+    }
+
+    // Auto-save on every keystroke
+    sf.addEventListener('input', function () {
+        if (this.value) localStorage.setItem(PASS_KEY, this.value);
+        else            localStorage.removeItem(PASS_KEY);
+    });
+
+    // Before backup: copy into the hidden form field
+    document.getElementById('backupForm')?.addEventListener('submit', function () {
+        document.getElementById('backupPasswordHidden').value = sf.value;
+    });
+})();
+
+// Auto-open add panel if a submission failed
+if (@(Model.ShowAddPanel ? "true" : "false")) {
+    openAddPanel('@Model.AddPanelMode');
+}
+
+// Release camera when navigating away
+window.addEventListener('beforeunload', stopCamera);
+</script>
+}
