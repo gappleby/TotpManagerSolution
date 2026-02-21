@@ -131,9 +131,12 @@ public class IndexModel : PageModel
                 zipStream.SetLevel(5);
                 if (hasPassword) zipStream.Password = BackupPassword;
 
-                var seen = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                var seen     = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                var uriList  = new List<string>();
+
                 foreach (var (filename, uri) in entries)
                 {
+                    uriList.Add(uri);
                     var pngBytes = QrCodeGenerator.GenerateQrPng(uri);
                     var baseName = SanitizeFilename(filename);
                     if (string.IsNullOrEmpty(baseName)) baseName = "account";
@@ -144,14 +147,27 @@ public class IndexModel : PageModel
 
                     var entry = new ZipEntry(entryName)
                     {
-                        DateTime = DateTime.UtcNow,
-                        Size     = pngBytes.Length,
+                        DateTime   = DateTime.UtcNow,
+                        Size       = pngBytes.Length,
                         AESKeySize = hasPassword ? 256 : 0,
                     };
                     zipStream.PutNextEntry(entry);
                     zipStream.Write(pngBytes, 0, pngBytes.Length);
                     zipStream.CloseEntry();
                 }
+
+                // Embed a plain-text list of OTP URIs so restore works on any platform
+                // (Linux containers can't decode QR images via System.Drawing).
+                var uriBytes = System.Text.Encoding.UTF8.GetBytes(string.Join('\n', uriList));
+                var txtEntry = new ZipEntry("accounts.txt")
+                {
+                    DateTime   = DateTime.UtcNow,
+                    Size       = uriBytes.Length,
+                    AESKeySize = hasPassword ? 256 : 0,
+                };
+                zipStream.PutNextEntry(txtEntry);
+                zipStream.Write(uriBytes, 0, uriBytes.Length);
+                zipStream.CloseEntry();
             }
 
             ms.Position = 0;
@@ -312,34 +328,70 @@ public class IndexModel : PageModel
         using var zipFile = new ZipFile(ms) { IsStreamOwner = false };
         if (!string.IsNullOrEmpty(password)) zipFile.Password = password;
 
+        // Single pass: collect accounts.txt content and image entries.
+        string? accountsText = null;
+        var imageEntries = new List<ZipEntry>();
+
         foreach (ZipEntry entry in zipFile)
         {
             if (!entry.IsFile) continue;
             if (entry.IsCrypted) wasEncrypted = true;
 
-            var ext = Path.GetExtension(entry.Name).ToLowerInvariant();
-            if (ext is not (".png" or ".jpg" or ".jpeg" or ".bmp")) continue;
-
-            var tmp = Path.ChangeExtension(Path.GetTempFileName(), ext);
-            try
+            if (entry.Name.Equals("accounts.txt", StringComparison.OrdinalIgnoreCase))
             {
-                using var entryStream = zipFile.GetInputStream(entry);
-                await using (var fs = System.IO.File.Create(tmp))
-                    await entryStream.CopyToAsync(fs);
+                // Platform-independent OTP URI list written by current backup format.
+                using var stream = zipFile.GetInputStream(entry);
+                using var reader = new System.IO.StreamReader(stream, System.Text.Encoding.UTF8);
+                accountsText = reader.ReadToEnd();
+            }
+            else
+            {
+                var ext = Path.GetExtension(entry.Name).ToLowerInvariant();
+                if (ext is ".png" or ".jpg" or ".jpeg" or ".bmp")
+                    imageEntries.Add(entry);
+            }
+        }
 
-                if (!OperatingSystem.IsWindows()) continue; // QR decode unavailable on non-Windows; client-side handles it
-#pragma warning disable CA1416
-                var uri = QrCodeDecoder.DecodeQrFromFile(tmp);
-#pragma warning restore CA1416
-                if (!uri.StartsWith("otpauth://")) continue;
-
+        if (accountsText is not null)
+        {
+            // Prefer accounts.txt — works on every platform, including Linux containers.
+            var uris = accountsText.Split('\n',
+                           StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                       .Where(u => u.StartsWith("otpauth://"));
+            foreach (var uri in uris)
+            {
                 var result = BuildAccountResultFromOtpUri(uri);
                 if (result is not null) results.Add(result);
             }
-            catch { /* skip unreadable / non-QR entries */ }
-            finally
+        }
+        else
+        {
+            // Legacy ZIPs (no accounts.txt): fall back to QR image decode.
+            // Only works on Windows (System.Drawing.Common unavailable on Linux).
+            foreach (var entry in imageEntries)
             {
-                if (System.IO.File.Exists(tmp)) System.IO.File.Delete(tmp);
+                var ext = Path.GetExtension(entry.Name).ToLowerInvariant();
+                var tmp = Path.ChangeExtension(Path.GetTempFileName(), ext);
+                try
+                {
+                    using var entryStream = zipFile.GetInputStream(entry);
+                    await using (var fs = System.IO.File.Create(tmp))
+                        await entryStream.CopyToAsync(fs);
+
+                    if (!OperatingSystem.IsWindows()) continue;
+#pragma warning disable CA1416
+                    var uri = QrCodeDecoder.DecodeQrFromFile(tmp);
+#pragma warning restore CA1416
+                    if (!uri.StartsWith("otpauth://")) continue;
+
+                    var result = BuildAccountResultFromOtpUri(uri);
+                    if (result is not null) results.Add(result);
+                }
+                catch { /* skip unreadable / non-QR entries */ }
+                finally
+                {
+                    if (System.IO.File.Exists(tmp)) System.IO.File.Delete(tmp);
+                }
             }
         }
 

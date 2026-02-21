@@ -272,6 +272,7 @@
 
 @section Scripts {
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jssha@3.3.1/dist/sha.js"></script>
 <script>
 // ── Client-side image QR decode ───────────────────────────────────────────
 // Tries: 1) native BarcodeDetector (Chrome/Edge — handles dense codes best)
@@ -501,25 +502,40 @@ function parseOtpUri(uri) {
 }
 
 async function generateTotp({ secret, digits, algorithm, period }) {
-    const algMap = { SHA1: 'SHA-1', SHA256: 'SHA-256', SHA512: 'SHA-512' };
-    const cryptoAlg = algMap[algorithm] ?? 'SHA-1';
-
     const counter = Math.floor(Date.now() / 1000 / period);
-    const buf = new ArrayBuffer(8);
+    const buf     = new ArrayBuffer(8);
     new DataView(buf).setUint32(4, counter, false); // big-endian; high word stays 0
 
-    const key = await crypto.subtle.importKey(
-        'raw', base32Decode(secret),
-        { name: 'HMAC', hash: cryptoAlg },
-        false, ['sign']
-    );
-    const hmac = new Uint8Array(await crypto.subtle.sign('HMAC', key, buf));
+    const keyBytes = base32Decode(secret);
+    let hmac;
+
+    if (window.crypto?.subtle) {
+        // Secure context (HTTPS / localhost): use native Web Crypto API.
+        const algMap    = { SHA1: 'SHA-1', SHA256: 'SHA-256', SHA512: 'SHA-512' };
+        const cryptoAlg = algMap[algorithm] ?? 'SHA-1';
+        const key = await crypto.subtle.importKey(
+            'raw', keyBytes,
+            { name: 'HMAC', hash: cryptoAlg },
+            false, ['sign']
+        );
+        hmac = new Uint8Array(await crypto.subtle.sign('HMAC', key, buf));
+    } else {
+        // Non-secure context (plain HTTP): fall back to jsSHA.
+        // crypto.subtle is only available in secure contexts (HTTPS/localhost).
+        const jshaAlg = algorithm === 'SHA256' ? 'SHA-256'
+                      : algorithm === 'SHA512' ? 'SHA-512' : 'SHA-1';
+        const shaObj  = new jsSHA(jshaAlg, 'ARRAYBUFFER', {
+            hmacKey: { value: keyBytes.buffer, format: 'ARRAYBUFFER' }
+        });
+        shaObj.update(buf);
+        hmac = new Uint8Array(shaObj.getHash('ARRAYBUFFER'));
+    }
 
     const offset = hmac[hmac.length - 1] & 0x0f;
-    const code = ((hmac[offset]     & 0x7f) << 24)
-               | ((hmac[offset + 1] & 0xff) << 16)
-               | ((hmac[offset + 2] & 0xff) << 8)
-               |  (hmac[offset + 3] & 0xff);
+    const code   = ((hmac[offset]     & 0x7f) << 24)
+                 | ((hmac[offset + 1] & 0xff) << 16)
+                 | ((hmac[offset + 2] & 0xff) << 8)
+                 |  (hmac[offset + 3] & 0xff);
 
     return String(code % (10 ** digits)).padStart(digits, '0');
 }
