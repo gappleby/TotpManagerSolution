@@ -1,11 +1,20 @@
 name: Docker Build
 
 on:
+  workflow_dispatch:
   push:
     branches: [ "main", "master" ]
+    # Trigger only if changes are outside TotpManagerSpa and not markdown
+    paths:
+      - '**'               # all files
+      - '!TotpManagerSpa/**'  # ignore this folder
+      - '!**/*.md'         # ignore markdown files
   pull_request:
     branches: [ "main", "master" ]
-
+    paths:
+      - '**'
+      - '!TotpManagerSpa/**'
+      - '!**/*.md'
 jobs:
   build:
     runs-on: ubuntu-latest
