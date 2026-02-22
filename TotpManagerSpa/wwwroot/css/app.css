@@ -1,0 +1,15 @@
+/* app.css — minor layout overrides; Bootstrap handles the rest. */
+
+/* Placeholder box shown while a gear-panel QR image is loading */
+.qr-img[src=""] {
+    display: inline-block;
+    min-width: 160px;
+    min-height: 160px;
+    background: #f8f9fa;
+    border-radius: 4px;
+}
+
+/* Keep TOTP digits from causing layout shift during first tick */
+.totp-code {
+    min-width: 6ch;
+}

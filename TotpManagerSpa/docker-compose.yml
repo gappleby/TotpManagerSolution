@@ -1,0 +1,21 @@
+services:
+  totp-spa:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      # Uncomment to deploy under a sub-path (e.g. behind nginx at /totp/):
+      # - PATHBASE=/totp
+    develop:
+      watch:
+        - action: rebuild
+          path: .
+          ignore:
+            - "**/*.md"
+            - bin/
+            - obj/
+            - .vs/
+            - "*.user"
+            - docker-compose.yml
