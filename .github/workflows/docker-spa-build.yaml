@@ -6,10 +6,12 @@ on:
     branches: [main]
     paths:
       - 'TotpManagerSpa/**'
+      - '!TotpManagerSpa/**/*.md'
   pull_request:
     branches: [main]
     paths:
       - 'TotpManagerSpa/**'
+      - '!TotpManagerSpa/**/*.md'
 
 jobs:
   build:
@@ -22,47 +24,27 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Ignore changes that are only .md files — don't waste a build on docs edits.
-      - name: Check for non-markdown changes
-        uses: dorny/paths-filter@v3
-        id: filter
-        with:
-          filters: |
-            spa:
-              - 'TotpManagerSpa/**'
-              - '!TotpManagerSpa/**/*.md'
-
       - name: Set up Docker Buildx
-        if: steps.filter.outputs.spa == 'true'
         uses: docker/setup-buildx-action@v3
 
-      # Pushes only on main branch commits; PR builds verify the image compiles but don't push.
+      # Only login when pushing to main
       - name: Log in to GitHub Container Registry
-        if: steps.filter.outputs.spa == 'true' && github.event_name == 'push'
+        if: github.event_name == 'push'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract image metadata (tags & labels)
-        if: steps.filter.outputs.spa == 'true'
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/${{ github.repository_owner }}/totp-spa
-          tags: |
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
-            type=sha,prefix=sha-
-
-      - name: Build and push
-        if: steps.filter.outputs.spa == 'true'
+      - name: Build and optionally push Docker image
         uses: docker/build-push-action@v6
         with:
           context: TotpManagerSpa
           file: TotpManagerSpa/Dockerfile
+          platforms: linux/amd64,linux/arm64
           push: ${{ github.event_name == 'push' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/totp-spa:latest
+            ghcr.io/${{ github.repository_owner }}/totp-spa:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
