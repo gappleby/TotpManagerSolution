@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:vm="clr-namespace:TotpManager.Maui.ViewModels"
+             xmlns:toolkit="http://schemas.microsoft.com/dotnet/2022/maui/toolkit"
+             x:Class="TotpManager.Maui.Pages.AccountDetailPage"
+             x:DataType="vm:AccountDetailViewModel"
+             Title="Account Detail">
+
+    <ContentPage.Resources>
+        <toolkit:InvertedBoolConverter x:Key="InvertedBool" />
+    </ContentPage.Resources>
+
+    <ContentPage.ToolbarItems>
+        <ToolbarItem Text="Edit"
+                     Command="{Binding StartEditCommand}"
+                     IsEnabled="{Binding IsEditing, Converter={StaticResource InvertedBool}}" />
+    </ContentPage.ToolbarItems>
+
+    <ScrollView>
+        <VerticalStackLayout Padding="24" Spacing="16">
+
+            <!-- QR code for this account -->
+            <Image Source="{Binding QrImageSource}"
+                   WidthRequest="220"
+                   HeightRequest="220"
+                   HorizontalOptions="Center"
+                   Aspect="AspectFit"
+                   Margin="0,8,0,8" />
+
+            <!-- View mode -->
+            <VerticalStackLayout IsVisible="{Binding IsEditing, Converter={StaticResource InvertedBool}}"
+                                 Spacing="8">
+
+                <Label Text="{Binding Account.DisplayName}"
+                       FontSize="24"
+                       FontAttributes="Bold"
+                       HorizontalOptions="Center" />
+
+                <Label Text="{Binding Account.SubtitleName}"
+                       FontSize="16"
+                       TextColor="Gray"
+                       HorizontalOptions="Center" />
+
+                <Grid ColumnDefinitions="Auto,*"
+                      RowDefinitions="Auto,Auto,Auto"
+                      ColumnSpacing="16"
+                      RowSpacing="6"
+                      Margin="0,12,0,0">
+                    <Label Grid.Row="0" Grid.Column="0" Text="Algorithm" FontAttributes="Bold" />
+                    <Label Grid.Row="0" Grid.Column="1" Text="{Binding Account.Algorithm}" />
+                    <Label Grid.Row="1" Grid.Column="0" Text="Digits" FontAttributes="Bold" />
+                    <Label Grid.Row="1" Grid.Column="1" Text="{Binding Account.Digits}" />
+                    <Label Grid.Row="2" Grid.Column="0" Text="Period" FontAttributes="Bold" />
+                    <Label Grid.Row="2" Grid.Column="1" Text="{Binding Account.Period, StringFormat='{0} s'}" />
+                </Grid>
+
+                <Button Text="Copy URI"
+                        Command="{Binding CopyUriCommand}"
+                        BackgroundColor="#1565C0" TextColor="White"
+                        HorizontalOptions="Fill"
+                        Margin="0,12,0,0" />
+
+                <Button Text="Delete Account"
+                        Command="{Binding DeleteCommand}"
+                        BackgroundColor="Red" TextColor="White"
+                        HorizontalOptions="Fill" />
+            </VerticalStackLayout>
+
+            <!-- Edit mode -->
+            <VerticalStackLayout IsVisible="{Binding IsEditing}" Spacing="10">
+                <Label Text="Service (Issuer)" FontAttributes="Bold" />
+                <Entry Text="{Binding EditIssuer}"
+                       Placeholder="e.g. Google"
+                       ReturnType="Next" />
+
+                <Label Text="Account Name" FontAttributes="Bold" />
+                <Entry Text="{Binding EditName}"
+                       Placeholder="e.g. you@gmail.com"
+                       ReturnType="Done"
+                       ReturnCommand="{Binding SaveEditCommand}" />
+
+                <Grid ColumnDefinitions="*,*" ColumnSpacing="12" Margin="0,8,0,0">
+                    <Button Grid.Column="0"
+                            Text="Save"
+                            Command="{Binding SaveEditCommand}"
+                            BackgroundColor="#1565C0" TextColor="White" />
+                    <Button Grid.Column="1"
+                            Text="Cancel"
+                            Command="{Binding CancelEditCommand}"
+                            BackgroundColor="Gray" TextColor="White" />
+                </Grid>
+            </VerticalStackLayout>
+
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

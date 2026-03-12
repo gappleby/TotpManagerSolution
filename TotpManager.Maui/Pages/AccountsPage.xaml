@@ -1,0 +1,138 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:vm="clr-namespace:TotpManager.Maui.ViewModels"
+             xmlns:toolkit="http://schemas.microsoft.com/dotnet/2022/maui/toolkit"
+             x:Class="TotpManager.Maui.Pages.AccountsPage"
+             x:DataType="vm:AccountsViewModel"
+             Title="TOTP Manager">
+
+    <ContentPage.Resources>
+        <toolkit:InvertedBoolConverter x:Key="InvertedBool" />
+        <toolkit:IsNotNullOrEmptyConverter x:Key="IsNotNullOrEmpty" />
+    </ContentPage.Resources>
+
+    <ContentPage.ToolbarItems>
+        <ToolbarItem Text="Add" Command="{Binding OpenAddCommand}" Order="Primary" Priority="0" />
+        <ToolbarItem Text="Backup" Command="{Binding BackupCommand}" Order="Secondary" />
+        <ToolbarItem Text="Restore" Command="{Binding RestoreCommand}" Order="Secondary" />
+    </ContentPage.ToolbarItems>
+
+    <Grid RowDefinitions="Auto,*">
+
+        <!-- Search bar — only shown when there are accounts -->
+        <SearchBar Grid.Row="0"
+                   Placeholder="Search accounts…"
+                   Text="{Binding SearchText}"
+                   IsVisible="{Binding HasAccounts}" />
+
+        <!-- Empty state -->
+        <VerticalStackLayout Grid.Row="1"
+                             VerticalOptions="Center"
+                             HorizontalOptions="Center"
+                             Spacing="12"
+                             IsVisible="{Binding IsEmpty}">
+            <Label Text="No accounts yet"
+                   FontSize="22"
+                   TextColor="Gray"
+                   HorizontalOptions="Center" />
+            <Label Text="Tap Add to import your TOTP accounts"
+                   FontSize="14"
+                   TextColor="Gray"
+                   HorizontalOptions="Center" />
+            <Button Text="Add Accounts"
+                    Command="{Binding OpenAddCommand}"
+                    HorizontalOptions="Center"
+                    Margin="0,8,0,0" />
+        </VerticalStackLayout>
+
+        <!-- Account cards -->
+        <CollectionView Grid.Row="1"
+                        ItemsSource="{Binding FilteredAccounts}"
+                        IsVisible="{Binding HasAccounts}"
+                        SelectionMode="None">
+
+            <CollectionView.ItemsLayout>
+                <LinearItemsLayout Orientation="Vertical" ItemSpacing="4" />
+            </CollectionView.ItemsLayout>
+
+            <CollectionView.ItemTemplate>
+                <DataTemplate x:DataType="vm:AccountDisplayItem">
+                    <SwipeView>
+                        <SwipeView.RightItems>
+                            <SwipeItems>
+                                <SwipeItem Text="Delete"
+                                           BackgroundColor="Red"
+                                           Command="{Binding Source={RelativeSource AncestorType={x:Type ContentPage}}, Path=BindingContext.DeleteCommand}"
+                                           CommandParameter="{Binding .}" />
+                            </SwipeItems>
+                        </SwipeView.RightItems>
+
+                        <Border Margin="12,4"
+                                Padding="16"
+                                StrokeShape="RoundRectangle 12"
+                                Stroke="LightGray"
+                                BackgroundColor="White">
+                            <Border.GestureRecognizers>
+                                <TapGestureRecognizer
+                                    Command="{Binding Source={RelativeSource AncestorType={x:Type ContentPage}}, Path=BindingContext.CopyCodeCommand}"
+                                    CommandParameter="{Binding .}" />
+                            </Border.GestureRecognizers>
+
+                            <Grid RowDefinitions="Auto,Auto,Auto,6"
+                                  ColumnDefinitions="*,Auto">
+
+                                <!-- Issuer -->
+                                <Label Grid.Row="0" Grid.Column="0"
+                                       Text="{Binding Account.DisplayName}"
+                                       FontAttributes="Bold"
+                                       FontSize="15" />
+
+                                <!-- Detail / info button -->
+                                <Button Grid.Row="0" Grid.Column="1"
+                                        Grid.RowSpan="2"
+                                        Text="⋯"
+                                        FontSize="20"
+                                        BackgroundColor="Transparent"
+                                        TextColor="Gray"
+                                        Padding="8,0"
+                                        VerticalOptions="Start"
+                                        Command="{Binding Source={RelativeSource AncestorType={x:Type ContentPage}}, Path=BindingContext.OpenDetailCommand}"
+                                        CommandParameter="{Binding .}" />
+
+                                <!-- Account name (subtitle) -->
+                                <Label Grid.Row="1" Grid.Column="0"
+                                       Text="{Binding Account.SubtitleName}"
+                                       FontSize="12"
+                                       TextColor="Gray"
+                                       IsVisible="{Binding Account.SubtitleName, Converter={StaticResource IsNotNullOrEmpty}}" />
+
+                                <!-- TOTP code + seconds remaining -->
+                                <Label Grid.Row="2" Grid.Column="0"
+                                       Text="{Binding FormattedCode}"
+                                       FontSize="36"
+                                       FontAttributes="Bold"
+                                       CharacterSpacing="2"
+                                       TextColor="#1565C0"
+                                       Margin="0,6,0,4" />
+
+                                <Label Grid.Row="2" Grid.Column="1"
+                                       Text="{Binding SecondsRemaining}"
+                                       FontSize="22"
+                                       TextColor="Gray"
+                                       VerticalOptions="End"
+                                       HorizontalOptions="End"
+                                       Margin="0,0,0,6" />
+
+                                <!-- Countdown progress bar -->
+                                <ProgressBar Grid.Row="3" Grid.ColumnSpan="2"
+                                             Progress="{Binding Progress}"
+                                             ProgressColor="#1565C0" />
+                            </Grid>
+                        </Border>
+                    </SwipeView>
+                </DataTemplate>
+            </CollectionView.ItemTemplate>
+        </CollectionView>
+    </Grid>
+</ContentPage>

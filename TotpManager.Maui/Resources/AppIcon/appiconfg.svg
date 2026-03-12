@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Foreground: shield outline with a clock inside -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="white">
+  <!-- Shield -->
+  <path d="M256 40 L80 120 L80 272 C80 384 160 470 256 504 C352 470 432 384 432 272 L432 120 Z"
+        fill="none" stroke="white" stroke-width="28" stroke-linejoin="round"/>
+  <!-- Clock circle -->
+  <circle cx="256" cy="264" r="88" fill="none" stroke="white" stroke-width="24"/>
+  <!-- Clock hands -->
+  <line x1="256" y1="264" x2="256" y2="200" stroke="white" stroke-width="16" stroke-linecap="round"/>
+  <line x1="256" y1="264" x2="314" y2="264" stroke="white" stroke-width="16" stroke-linecap="round"/>
+  <!-- Centre dot -->
+  <circle cx="256" cy="264" r="10" fill="white"/>
+</svg>

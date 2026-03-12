@@ -3,4 +3,5 @@
   <Project Path="TotpManager.Tool/TotpManager.Tool.csproj" />
   <Project Path="TotpManager.Web/TotpManager.Web.csproj" />
   <Project Path="TotpManagerSpa/TotpManagerSpa.csproj" />
+  <Project Path="TotpManager.Maui/TotpManager.Maui.csproj" />
 </Solution>

@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:vm="clr-namespace:TotpManager.Maui.ViewModels"
+             xmlns:zxing="clr-namespace:ZXing.Net.Maui.Controls;assembly=ZXing.Net.MAUI.Controls"
+             xmlns:toolkit="http://schemas.microsoft.com/dotnet/2022/maui/toolkit"
+             x:Class="TotpManager.Maui.Pages.AddAccountPage"
+             x:DataType="vm:AddAccountViewModel"
+             Title="Add Account">
+
+    <ContentPage.Resources>
+        <toolkit:InvertedBoolConverter x:Key="InvertedBool" />
+        <toolkit:IsNotNullOrEmptyConverter x:Key="IsNotNullOrEmpty" />
+    </ContentPage.Resources>
+
+    <ContentPage.ToolbarItems>
+        <ToolbarItem Text="Cancel" Clicked="OnCancelClicked" />
+    </ContentPage.ToolbarItems>
+
+    <Grid RowDefinitions="Auto,*">
+
+        <!-- Mode picker tabs -->
+        <HorizontalStackLayout Grid.Row="0"
+                               Spacing="0"
+                               HorizontalOptions="Fill"
+                               BackgroundColor="#F5F5F5">
+            <Button Text="URL / Text"
+                    Command="{Binding SelectModeCommand}" CommandParameter="url"
+                    BackgroundColor="Transparent" TextColor="#1565C0"
+                    FontSize="14" Padding="16,12"
+                    HorizontalOptions="FillAndExpand" />
+            <Button Text="Camera"
+                    Command="{Binding SelectModeCommand}" CommandParameter="camera"
+                    BackgroundColor="Transparent" TextColor="#1565C0"
+                    FontSize="14" Padding="16,12"
+                    HorizontalOptions="FillAndExpand" />
+            <Button Text="File"
+                    Command="{Binding SelectModeCommand}" CommandParameter="file"
+                    BackgroundColor="Transparent" TextColor="#1565C0"
+                    FontSize="14" Padding="16,12"
+                    HorizontalOptions="FillAndExpand" />
+        </HorizontalStackLayout>
+
+        <!-- URL mode -->
+        <VerticalStackLayout Grid.Row="1" Padding="20" Spacing="12"
+                             IsVisible="{Binding IsUrlMode}">
+            <Label Text="Paste a Google Authenticator migration URL or otpauth:// URIs (one per line):"
+                   TextColor="Gray" FontSize="14" />
+            <Editor Text="{Binding UrlInput}"
+                    Placeholder="otpauth-migration://offline?data=…&#10;otpauth://totp/Issuer:Name?secret=…"
+                    HeightRequest="160"
+                    AutoSize="TextChanges"
+                    BackgroundColor="#F9F9F9" />
+            <Label Text="{Binding ErrorMessage}"
+                   TextColor="Red"
+                   IsVisible="{Binding ErrorMessage, Converter={StaticResource IsNotNullOrEmpty}}" />
+            <Button Text="Import"
+                    Command="{Binding SubmitUrlCommand}"
+                    IsEnabled="{Binding IsBusy, Converter={StaticResource InvertedBool}}"
+                    BackgroundColor="#1565C0" TextColor="White"
+                    HorizontalOptions="Fill" />
+            <ActivityIndicator IsRunning="{Binding IsBusy}"
+                               IsVisible="{Binding IsBusy}"
+                               HorizontalOptions="Center" />
+        </VerticalStackLayout>
+
+        <!-- Camera mode — ZXing barcode scanner -->
+        <Grid Grid.Row="1" IsVisible="{Binding IsCameraMode}">
+            <zxing:CameraBarcodeReaderView x:Name="BarcodeReader"
+                                           BarcodesDetected="OnBarcodesDetected"
+                                           HorizontalOptions="Fill"
+                                           VerticalOptions="Fill" />
+            <Label Text="Point camera at a QR code"
+                   TextColor="White"
+                   BackgroundColor="#80000000"
+                   Padding="12"
+                   HorizontalOptions="Fill"
+                   VerticalOptions="End"
+                   HorizontalTextAlignment="Center" />
+        </Grid>
+
+        <!-- File mode -->
+        <VerticalStackLayout Grid.Row="1" Padding="20" Spacing="12"
+                             IsVisible="{Binding IsFileMode}">
+            <Label Text="Select a plain-text file containing otpauth:// URIs (one per line)."
+                   TextColor="Gray" FontSize="14" />
+            <Button Text="Pick File"
+                    Command="{Binding PickFileCommand}"
+                    IsEnabled="{Binding IsBusy, Converter={StaticResource InvertedBool}}"
+                    BackgroundColor="#1565C0" TextColor="White"
+                    HorizontalOptions="Fill" />
+            <Label Text="{Binding ErrorMessage}"
+                   TextColor="Red"
+                   IsVisible="{Binding ErrorMessage, Converter={StaticResource IsNotNullOrEmpty}}" />
+            <ActivityIndicator IsRunning="{Binding IsBusy}"
+                               IsVisible="{Binding IsBusy}"
+                               HorizontalOptions="Center" />
+        </VerticalStackLayout>
+
+    </Grid>
+</ContentPage>
